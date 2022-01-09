@@ -1,86 +1,45 @@
 # HA-fusionpbx
 ##How to create a highly available fusionpbx cluster on Debian with keepalived postgresql and BDR
 
-1. Create two machines with debian installs. Give both a public and private ip.
+1. Create two machines with debian installs. Give both a public and private ip. Assign the security group fs-public to the public interface and fs-connect to the private interface.
+
+Pre Checklist:
+update hostname
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/set-hostname.html
+generate ssh keys
+add authorized_keys and config
+set permissions
+add ssh keys and config entry
+test ssh between boxes
 
 ###Fusion1
-2. Install fusionpbx on one machine, we'll call this one fusion1. BUT, Before running the install script (`./install.sh`) you will want to edit the `/usr/src/fusionpbx-install.sh/debian/resources/postgres.sh` installation file, so you don't have two separate postgres instances. Follow the steps below:
+2. On both servers run:
 
   ```
-  apt-get update && apt-get upgrade -y --force-yes
-  apt-get install -y --force-yes git
+  apt-get update && apt-get upgrade -y
+  apt-get install -y git
   cd /usr/src
   git clone https://github.com/fusionpbx/fusionpbx-install.sh.git
   chmod 755 -R /usr/src/fusionpbx-install.sh
   cd /usr/src/fusionpbx-install.sh/debian
   ```
-Now uncomment the "Add PostgreSQL and BDR REPO" section, and comment out the "postgres official repository" like so:
-####/usr/src/fusionpbx-install.sh/debian/resources/postgres.sh
+
+Fusion 1
+Edit the values
+####/usr/src/fusionpbx-install.sh/debian/resources/config.sh
   ```
-  #!/bin/sh
-
-  #send a message
-  echo "Install PostgreSQL"
-
-  #generate a random password
-  password=$(dd if=/dev/urandom bs=1 count=20 2>/dev/null | base64)
-
-  #install message
-  echo "Install PostgreSQL and create the database and users\n"
-
-  #included in the distribution
-  #apt-get install -y --force-yes sudo postgresql
-
-  #postgres official repository
-  #echo 'deb http://apt.postgresql.org/pub/repos/apt/ jessie-pgdg main' >> /etc/apt/sources.list.d/pgdg.list
-  #wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-  #apt-get update && apt-get upgrade -y
-  #apt-get install -y --force-yes sudo postgresql
-
-  #Add PostgreSQL and BDR REPO
-  echo 'deb http://apt.postgresql.org/pub/repos/apt/ jessie-pgdg main'  >> /etc/apt/sources.list.d/postgresql.list
-  echo 'deb http://packages.2ndquadrant.com/bdr/apt/ jessie-2ndquadrant main' >> /etc/apt/sources.list.d/2ndquadrant.list
-  /usr/bin/wget --quiet -O - http://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc | apt-key add -
-  /usr/bin/wget --quiet -O - http://packages.2ndquadrant.com/bdr/apt/AA7A6805.asc | apt-key add -
-  apt-get update && apt-get upgrade -y
-  apt-get install -y --force-yes sudo postgresql-bdr-9.4 postgresql-bdr-9.4-bdr-plugin postgresql-bdr-contrib-9.4
-
-  #systemd
-  systemctl daemon-reload
-  systemctl restart postgresql
-
-  #init.d
-  #/usr/sbin/service postgresql restart
-
-  #move to /tmp to prevent a red herring error when running sudo with psql
-  cwd=$(pwd)
-  cd /tmp
-  #add the databases, users and grant permissions to them
-  sudo -u postgres psql -c "CREATE DATABASE fusionpbx";
-  sudo -u postgres psql -c "CREATE DATABASE freeswitch";
-  sudo -u postgres psql -c "CREATE ROLE fusionpbx WITH SUPERUSER LOGIN PASSWORD '$password';"
-  sudo -u postgres psql -c "CREATE ROLE freeswitch WITH SUPERUSER LOGIN PASSWORD '$password';"
-  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE fusionpbx to fusionpbx;"
-  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE freeswitch to fusionpbx;"
-  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE freeswitch to freeswitch;"
-  #ALTER USER fusionpbx WITH PASSWORD 'newpassword';
-  cd $cwd
-
-  #set the ip address
-  #server_address=$(hostname -I)
+   domain_name=example.com
+   database_repo=2ndquadrant
   ```
 The BDR repositories and packages are needed for HA. Now do the install (/usr/src/fusionpbx-install.sh/debian/install.sh):
 
   ```
   ./install.sh
   ```
-*Take note of the password you've been given in the output.*
+*Take note of the password you've been given in the output as the panel password.*
+cat /etc/fusionpbx/config.php
+*Take note of the password for the database.*
 
-
-3. Make sure the following packages are installed:
-  ```
-  sudo apt-get install php5-sqlite libuv-dev flex libtool php5-fpm ssl-cert nginx libjson0-dev php-db libexpat-dev php5-cli sqlite fail2ban lsb-release python-software-properties libpcap-dev ghostscript git-core libjpeg-dev subversion build-essential autoconf automake devscripts gawk g++ make libncurses5-dev python-dev pkg-config libtiff5-dev libldns-dev libperl-dev libgdbm-dev libdb-dev gettext libcurl4-openssl-dev libpcre3-dev libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev libpq-dev screen htop bzip2 curl memcached ntp php5-curl php5-imap php5-mcrypt lame time bison libssl-dev unixodbc libmyodbc unixodbc-dev libtiff-tools libmemcached-dev libtool-bin yasm nasm liblua5.2-0 liblua5.2-dev libopus-dev libcodec2-dev libyuv-dev libsndfile-dev libvpx-dev libvpx2-dev postgresql-bdr-9.4 postgresql-bdr-9.4-bdr-plugin postgresql-bdr-contrib-9.4  php5-pgsql tmux csync2 tree keepalived inotify-tools
-  ```
 
 4. Add the following postgres conf files:
 ###/etc/postgresql/9.4/main/pg_hba.conf
@@ -107,7 +66,7 @@ Replace YOURSUBNET with the cidr of your subnet...
   host  replication     postgres        YOURSUBNET              trust
   ```
 
-###/etc/postgresql/9.4/main/postgres.conf
+###/etc/postgresql/9.4/main/postgresql.conf
   ```
   data_directory = '/var/lib/postgresql/9.4/main'        # use data in another directory
                       # (change requires restart)
@@ -170,21 +129,23 @@ Replace YOURSUBNET with the cidr of your subnet...
   create extension bdr;
   ```
 
-7. Create bdr group for fusionpbx and freeswitch databases:
+7. Create bdr group for fusionpbx and freeswitch databases, update t he ip with the private interface:
   ```
-  su -l postgres
-  psql fusionpbx
+  \connect fusionpbx;
   SELECT bdr.bdr_group_create(local_node_name := 'fusion1', node_external_dsn := 'host=NODE1IP port=5432  dbname=fusionpbx connect_timeout=10 keepalives_idle=5 keepalives_interval=1');
   \connect freeswitch
   SELECT bdr.bdr_group_create(local_node_name := 'fusion1', node_external_dsn := 'host=NODE1IP port=5432  dbname=freeswitch connect_timeout=10 keepalives_idle=5 keepalives_interval=1');
   ```
 
+Double check iptables on fusion 1 and the aws security groups, you will need to add the private subnet for postgres access.
+
 ###Fusion2
 
-1. Add the necessary repos and keys:
+1. Add the necessary repos and keys (see commented line if you get gpg issues):
   ```
-  echo 'deb http://apt.postgresql.org/pub/repos/apt/ jessie-pgdg main'  >> /etc/apt/sources.list
-  echo 'deb http://packages.2ndquadrant.com/bdr/apt/ jessie-2ndquadrant main' >> /etc/apt/sources.list
+  echo 'deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main'  >> /etc/apt/sources.list
+  echo 'deb http://packages.2ndquadrant.com/bdr/apt/ stretch-2ndquadrant main' >> /etc/apt/sources.list
+  echo '#deb [trusted=yes] http://packages.2ndquadrant.com/bdr/apt/ stretch-2ndquadrant main' >> /etc/apt/sources.list
   /usr/bin/wget --quiet -O - http://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc | apt-key add -
   /usr/bin/wget --quiet -O - http://packages.2ndquadrant.com/bdr/apt/AA7A6805.asc | apt-key add -
   apt-get update && apt-get upgrade -y
@@ -294,8 +255,7 @@ Replace YOURSUBNET with the cidr of your subnet...
 
 7. On fusion2 join to the bdr group you've created on fusion1. NODE1IP is a management ip of node 1, preferrably a private ip
   ```
-  su -l postgres
-  psql fusionpbx
+  \connect fusionpbx;
   select bdr.bdr_group_join(local_node_name := 'fusion2', node_external_dsn := 'host=NODE2IP port=5432 dbname=fusionpbx connect_timeout=10 keepalives_idle=5 keepalives_interval=1', join_using_dsn := 'host=NODE1IP  port=5432 dbname=fusionpbx connect_timeout=10 keepalives_idle=5 keepalives_interval=1');
   \connect freeswitch
   select bdr.bdr_group_join(local_node_name := 'fusion2', node_external_dsn := 'host=NODE2IP port=5432 dbname=freeswitch connect_timeout=10 keepalives_idle=5 keepalives_interval=1', join_using_dsn := 'host=NODE1IP  port=5432 dbname=freeswitch connect_timeout=10 keepalives_idle=5 keepalives_interval=1');
@@ -307,73 +267,124 @@ Replace YOURSUBNET with the cidr of your subnet...
   Initializing nodes have node status 'i'.
   Dead/killed nodes have node status 'k'.
 
-  To remove a node/start over/re-join a node see here TODO
 
-8. Add the freeswitch tables so we can switch from sqlite to postgresql. This can be done on either fusion1 or fusion2 (but not both), as replication is now taking place.
-  ```
-  cd /tmp
-  wget https://raw.githubusercontent.com/fusionpbx/fusionpbx/master/resources/install/sql/switch.sql
-  chmod 755 switch.sql
-  su -l postgres
-  psql -U postgres -d freeswitch -f /tmp/switch.sql -L sql.log
-  ```
+8. Now that fusion2 is in the bdr group we can install fusionpbx on fusion2. This way we still have a GUI if fusion1 goes down for some reason.
+    ```
+    cd /usr/src/fusionpbx-install.sh/debian
+    ```
+    Edit the install.sh file and comment out the postgres script
+    ```
+    #Postgres
+    #resources/postgresql.sh
+    ```
+    Empty the finish script
+    ```
+    echo > resources/finish.sh
+    ```
+    Paste the script below into resources/finish.sh
+    ```
+    #!/bin/sh
 
-9. Now that fusion2 is in the bdr group we can install fusionpbx on fusion2. This way we still have a GUI if fusion1 goes down for some reason. *Repeat step 2 for fusion1 on fusion2* to install fusionpbx on fusion2, make sure you uncomment the BDR section the same way to avoid having two instances of postgres. Make sure you can login to both fusion1 and fusion2.
+    #move to script directory so all relative paths work
+    cd "$(dirname "$0")"
 
-10. Tell freeswitch to use the postgres database. You'll have to set/uncomment the following lines in each file:
-###/etc/freeswitch/callcenter.conf
-  ```
-  <param name="odbc-dsn" value="$${dsn}"/>
-  ```
-###/etc/freeswitch/switch.conf.xml
-  ```
-  <param name="switchname" value="freeswitch"/>
-  <param name="core-db-dsn" value="$${dsn}" />
-  ```
-###/etc/freeswitch/fifo.conf.xml
-  ```
-  <param name="odbc-dsn" value="$${dsn}"/>
-  ```
-###/etc/freeswitch/db.conf.xml
-  ```
-  <param name="core-db-dsn" value="$${dsn}" />
-  ```
-###/etc/freeswitch/voicemail.conf.xml
-  ```
-  <param name="odbc-dsn" value="$${dsn}"/>
-  ```
-11. In order to tell fusion where the database is we need to define the DSN. Find out what the DSN is with: `cat /etc/fusionpbx/config.lua | grep database.switch`
+    #includes
+    . ./config.sh
+    . ./colors.sh
 
-  ```
-  root@jessie:/home/vagrant# cat /etc/fusionpbx/config.lua | grep database.switch
-  	database.switch = "pgsql://hostaddr=127.0.0.1 port=5432 dbname=freeswitch user=fusionpbx password=YOURPASS options='' application_name='freeswitch'";
-  ```
+    #database details
+    database_username=fusionpbx
+    if [ .$database_password = .'random' ]; then
+      database_password=$(dd if=/dev/urandom bs=1 count=20 2>/dev/null | base64 | sed 's/[=\+//]//g')
+    fi
 
-12. Create the DSN variable in the web GUI. Go to *Advanced -> Variables*, and click the plus on the right hand side in the defaults section. Create the variable with the following info:
-  ```
-  Name: dsn
-  Value: pgsql://hostaddr=127.0.0.1 port=5432 dbname=freeswitch user=fusionpbx password=YOURPASS options='' application_name='freeswitch'
-  switchname: freeswitch
-  Category: defaults
-  ```
+    #allow the script to use the new password
+    export PGPASSWORD=$database_password
 
-13. Now create another variable called *dsn_system*. You can get the value by doing this command: `cat /etc/fusionpbx/config.lua | grep database.system`
-  ```
-  Name: dsn_system
-  Value: pgsql://hostaddr=127.0.0.1 port=5432 dbname=fusionpbx user=fusionpbx password=YOURPASS options='' application_name='fusionpbx'
-  switchname: freeswitch
-  Category: defaults
-  ```
+    #install the database backup
+    cp backup/fusionpbx-backup /etc/cron.daily
+    cp backup/fusionpbx-maintenance /etc/cron.daily
+    chmod 755 /etc/cron.daily/fusionpbx-backup
+    chmod 755 /etc/cron.daily/fusionpbx-maintenance
+    sed -i "s/zzz/$database_password/g" /etc/cron.daily/fusionpbx-backup
+    sed -i "s/zzz/$database_password/g" /etc/cron.daily/fusionpbx-maintenance
 
-14. Update the sip profiles table so they are kept in the postgres fusionpbx database instead of sqlite (default):
-  ```
-  su postgres
-  psql fusionpbx
-  UPDATE v_sip_profile_settings SET sip_profile_setting_enabled = 'true' WHERE sip_profile_setting_name = 'odbc-dsn' AND sip_profile_setting_enabled = 'false';
-  ```
+    #add the config.php
+    mkdir -p /etc/fusionpbx
+    chown -R www-data:www-data /etc/fusionpbx
+    cp fusionpbx/config.php /etc/fusionpbx
+    sed -i /etc/fusionpbx/config.php -e s:"{database_host}:$database_host:"
+    sed -i /etc/fusionpbx/config.php -e s:'{database_username}:fusionpbx:'
+    sed -i /etc/fusionpbx/config.php -e s:"{database_password}:$database_password:"
 
-15. Go into `/var/lib/freeswitch/db` and delete all the sqlite databases, then restart freeswitch on both fusion1 and fusion2. if freeswitch starts up again and `/var/lib/freeswitch/db` is empty you've successfully switched to postgres. If something goes wrong check the freeswitch log.
 
-. keepalived
+    #get the server hostname
+    if [ .$domain_name = .'hostname' ]; then
+      domain_name=$(hostname -f)
+    fi
 
-. add another set of sip profiles
+    #get the ip address
+    if [ .$domain_name = .'ip_address' ]; then
+      domain_name=$(hostname -I | cut -d ' ' -f1)
+    fi
+
+
+    user_name=$system_username
+    if [ .$system_password = .'random' ]; then
+      user_password=$(dd if=/dev/urandom bs=1 count=20 2>/dev/null | base64 | sed 's/[=\+//]//g')
+    else
+      user_password=$system_password
+    fi
+
+
+    #restart freeswitch
+    /bin/systemctl daemon-reload
+    /bin/systemctl restart freeswitch
+
+    #welcome message
+    echo ""
+    echo ""
+    verbose "Installation Notes. "
+    echo ""
+    echo "   Please save the this information and reboot this system to complete the install. "
+    echo ""
+    echo "   Use a web browser to login."
+    echo "      domain name: https://$domain_name"
+    echo "      username: $user_name"
+    echo "      password: $user_password"
+    echo ""
+    echo "   The domain name in the browser is used by default as part of the authentication."
+    echo "   If you need to login to a different domain then use username@domain."
+    echo "      username: $user_name@$domain_name";
+    echo ""
+    echo "   Official FusionPBX Training"
+    echo "      Fastest way to learn FusionPBX. For more information https://www.fusionpbx.com."
+    echo "      Available online and in person. Includes documentation and recording."
+    echo ""
+    echo "      Location:               Online"
+    echo "      Admin Training:          TBA"
+    echo "      Advanced Training:       TBA"
+    echo "      Continuing Education:   https://www.fusionpbx.com/training"
+    echo "      Timezone:               https://www.timeanddate.com/weather/usa/idaho"
+    echo ""
+    echo "   Additional information."
+    echo "      https://fusionpbx.com/members.php"
+    echo "      https://fusionpbx.com/training.php"
+    echo "      https://fusionpbx.com/support.php"
+    echo "      https://www.fusionpbx.com"
+    echo "      http://docs.fusionpbx.com"
+    echo ""
+    ```
+    Modify the following values in resources/config.sh
+    ```
+    domain_name=ip_address # same as fusion1
+    system_username=admin  # same as fusion1
+    system_password=random # same as fusion1
+    database_password=random # same as fusion1
+    database_repo=2ndquadrant #same as fusion1
+    ```
+    Run the install
+    ```
+    ./install.sh
+    ```
+    Update the iptables with the postgres access
